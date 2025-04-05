@@ -1,0 +1,61 @@
+---
+- name: system health report & alert
+  hosts: all
+  tasks:
+    - name: check cpu
+      command: top -bn1
+      register: cpu_output
+
+    - name: check memory
+      command: free -m
+      register: memory_output
+
+    - name: check disk
+      command: df -h
+      register: disk_output
+
+    - name: report of system health report
+      local_action:
+        module: copy
+        content: |
+          Hosts: {{ inventory_hostname }}
+                  {{ cpu_output.stdout }}
+                  {{ memory_output.stdout }}
+                  {{ disk_output.stdout }}
+        dest: /adhamplaybooks/{{ inventory_hostname }}.txt
+
+    - name: install mail service
+      yum:
+        name: postfix
+        state: present
+    
+    - name: ensure that postfix in enable and running
+      service:
+        name: postfix
+        state: started
+        enabled: true
+
+    - name: cofiguration of postfix
+      lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^relayhost ='
+        line: 'relayhost ='
+        state: present
+        backup: true
+      notify:
+        - restart postfix
+
+
+    - name: send email when high cp
+      mail:
+        to: "adhmkhlliid@gmail.com"
+        subject: "high cpu on host {{ inventory_hostname }}"
+        body: "high cpu detect on host {{ inventory_hostname }}"
+      when: "'%Cpu(s):' in cpu_output.stdout and
+              (cpu_output.stdout.split('us,')[0].split()[-1] | float  > 85)"
+    
+handlers:
+  - name: restart postfix
+    service:
+      name: postfix
+      state: restarted
